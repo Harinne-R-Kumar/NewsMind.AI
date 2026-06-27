@@ -1,0 +1,172 @@
+# NewsMind AI - Configurable Source Registry
+# Add or disable sources here without modifying Python code.
+
+defaults:
+  max_article_age_hours: 72
+  max_sources_per_query: 8
+  articles_per_source: 10
+
+sources:
+  # --- News (RSS search templates use {query} placeholder) ---
+  - id: hacker_news
+    name: "Hacker News"
+    category: news
+    type: rss_search
+    template: "https://hnrss.org/newest?q={query}&points=30"
+    priority: 1
+    credibility: 0.95
+    enabled: true
+
+  - id: hacker_news_frontpage
+    name: "Hacker News"
+    category: news
+    type: rss
+    url: "https://hnrss.org/frontpage"
+    priority: 2
+    credibility: 0.95
+    enabled: true
+
+  - id: reddit
+    name: "Reddit Technology"
+    category: news
+    type: rss_search
+    template: "https://www.reddit.com/search.rss?q={query}&sort=new"
+    priority: 3
+    credibility: 0.75
+    enabled: true
+
+  - id: ars_technica
+    name: "Ars Technica"
+    category: news
+    type: rss
+    url: "https://feeds.arstechnica.com/arstechnica/technology-lab"
+    priority: 4
+    credibility: 0.90
+    enabled: true
+
+  - id: techcrunch
+    name: "TechCrunch"
+    category: news
+    type: rss
+    url: "https://techcrunch.com/feed/"
+    priority: 5
+    credibility: 0.85
+    enabled: true
+
+  - id: wired
+    name: "Wired"
+    category: news
+    type: rss
+    url: "https://www.wired.com/feed/rss"
+    priority: 6
+    credibility: 0.85
+    enabled: true
+
+  - id: dev_to
+    name: "Dev.to"
+    category: news
+    type: rss_search
+    template: "https://dev.to/feed/tag/{query}"
+    priority: 7
+    credibility: 0.80
+    enabled: true
+
+  # --- GitHub (API-based, handled by github_trending tool) ---
+  - id: github_trending
+    name: "GitHub Trending"
+    category: github
+    type: api
+    priority: 1
+    credibility: 0.90
+    enabled: true
+
+  # --- Research papers (arXiv API) ---
+  - id: arxiv
+    name: "arXiv"
+    category: research
+    type: api
+    priority: 1
+    credibility: 0.95
+    enabled: true
+
+  # --- Conferences ---
+  - id: hn_conferences
+    name: "Hacker News"
+    category: conferences
+    type: rss_search
+    template: "https://hnrss.org/newest?q={query}+conference+OR+CFP+OR+webinar&points=20"
+    priority: 1
+    credibility: 0.80
+    enabled: true
+
+  # --- Hackathons ---
+  - id: hn_hackathons
+    name: "Hacker News"
+    category: hackathons
+    type: rss_search
+    template: "https://hnrss.org/newest?q={query}+hackathon&points=20"
+    priority: 1
+    credibility: 0.80
+    enabled: true
+
+  - id: devpost
+    name: "Devpost"
+    category: hackathons
+    type: rss
+    url: "https://devpost.com/hackathons.rss"
+    priority: 2
+    credibility: 0.85
+    enabled: true
+
+  # --- Competitions ---
+  - id: hn_competitions
+    name: "Hacker News"
+    category: competitions
+    type: rss_search
+    template: "https://hnrss.org/newest?q={query}+competition+OR+contest+OR+coding&points=30"
+    priority: 1
+    credibility: 0.80
+    enabled: true
+
+  # --- Learning resources ---
+  - id: hn_learning
+    name: "Hacker News"
+    category: learning
+    type: rss_search
+    template: "https://hnrss.org/newest?q={query}+tutorial+OR+course+OR+learn&points=30"
+    priority: 1
+    credibility: 0.85
+    enabled: true
+
+  # --- Weather (OpenWeather API) ---
+  - id: openweather
+    name: "OpenWeather"
+    category: weather
+    type: api
+    priority: 1
+    credibility: 1.0
+    enabled: true
+
+# Fallback directory links when RSS search returns no results
+fallbacks:
+  hackathons:
+    - title: "Browse Hackathons on Devpost"
+      url: "https://devpost.com/hackathons"
+      source: "Devpost"
+    - title: "ETHGlobal Events"
+      url: "https://ethglobal.com/events"
+      source: "ETHGlobal"
+  competitions:
+    - title: "LeetCode Weekly Contest"
+      url: "https://leetcode.com/contest/"
+      source: "LeetCode"
+    - title: "Codeforces Contests"
+      url: "https://codeforces.com/contests"
+      source: "Codeforces"
+    - title: "Kaggle Competitions"
+      url: "https://www.kaggle.com/competitions"
+      source: "Kaggle"
+  conferences:
+    - title: "Conference Alerts - Technology"
+      url: "https://conferencealerts.com/show-event?id=technology"
+      source: "Conference Alerts"
