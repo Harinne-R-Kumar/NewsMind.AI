@@ -21,6 +21,13 @@ from backend.mcp.source_registry import (
 )
 from backend.utils.logging import setup_logger
 from backend.utils.sanitize import sanitize_for_llm, is_valid_url
+from lingua import Language, LanguageDetectorBuilder
+
+detector = (
+    LanguageDetectorBuilder
+    .from_all_languages()
+    .build()
+)
 
 logger = setup_logger("mcp_tools")
 
@@ -44,6 +51,28 @@ def _is_fresh(entry: dict, max_age_hours: int) -> bool:
 def _clean_summary(raw: str) -> str:
     return sanitize_for_llm(raw.replace("\n", " ").strip(), max_length=400)
 
+LANGUAGE_MAP = {
+    "English": Language.ENGLISH,
+    "French": Language.FRENCH,
+    "German": Language.GERMAN,
+    "Spanish": Language.SPANISH,
+    "Hindi": Language.HINDI,
+    "Japanese": Language.JAPANESE,
+    "Korean": Language.KOREAN,
+}
+
+def is_language(text: str, language: str) -> bool:
+    try:
+        detected = detector.detect_language_of(text)
+        expected = LANGUAGE_MAP.get(language)
+
+        if expected is None:
+            return True
+
+        return detected == expected
+
+    except Exception:
+        return False
 
 async def _fetch_rss_url(
     url: str,
@@ -52,6 +81,7 @@ async def _fetch_rss_url(
     query: str = "",
     limit: int = 10,
     max_age_hours: int = 72,
+    language="English",
     credibility: float = 0.8,
 ) -> List[Dict[str, Any]]:
     """Fetch and parse a single RSS feed URL."""
@@ -72,6 +102,12 @@ async def _fetch_rss_url(
                 summary_raw = entry.get("summary", "")
                 if query.lower() not in summary_raw.lower():
                     continue
+            
+            published = (
+                entry.get("published")
+                or entry.get("updated")
+                or entry.get("pubDate")
+            )
 
             pub = _parse_published(entry)
             articles.append({
@@ -80,9 +116,11 @@ async def _fetch_rss_url(
                 "source": feed_title or source_name,
                 "summary": _clean_summary(entry.get("summary", "")),
                 "section": section,
-                "published_at": pub.isoformat() if pub else datetime.utcnow().isoformat(),
+                "published_at": published,
                 "credibility": credibility,
             })
+            if not is_language(title + " " + summary, language):
+                continue
 
             if len(articles) >= limit:
                 break
@@ -97,6 +135,7 @@ async def _fetch_from_sources(
     query: str,
     section: str,
     preferred_sources: Optional[List[str]] = None,
+    language="English",
     limit: int = 10,
 ) -> List[Dict[str, Any]]:
     """Fetch articles from all enabled sources in a category."""
@@ -122,6 +161,7 @@ async def _fetch_from_sources(
             query="" if source.get("type") == "rss_search" else query,
             limit=per_source,
             max_age_hours=max_age,
+            language=language,
             credibility=source.get("credibility", 0.8),
         ))
 
@@ -157,6 +197,7 @@ async def _fetch_from_sources(
 async def search_news(
     topic: str,
     sources: Optional[List[str]] = None,
+    language="English",
     limit: int = 15,
 ) -> List[Dict[str, Any]]:
     """
@@ -172,6 +213,7 @@ async def search_news(
         query=topic,
         section=topic.title(),
         preferred_sources=sources,
+        language=language,
         limit=limit,
     )
 
@@ -287,12 +329,18 @@ async def research_papers(topic: str, limit: int = 5) -> List[Dict[str, Any]]:
                     for entry in root.findall("arxiv:entry", ns):
                         title_el = entry.find("arxiv:title", ns)
                         summary_el = entry.find("arxiv:summary", ns)
+                        published_el = entry.find("arxiv:published", ns)
                         link_el = entry.find("arxiv:id", ns)
                         authors = [
                             a.find("arxiv:name", ns).text
                             for a in entry.findall("arxiv:author", ns)
                         ][:3]
                         title = title_el.text.strip() if title_el is not None else "Untitled"
+                        published = (
+                            published_el.text
+                            if published_el is not None
+                            else ""
+                        )
                         papers.append({
                             "title": sanitize_for_llm(title, max_length=300),
                             "url": link_el.text if link_el is not None else "",
@@ -302,7 +350,7 @@ async def research_papers(topic: str, limit: int = 5) -> List[Dict[str, Any]]:
                                 max_length=300,
                             ),
                             "section": "Research Papers",
-                            "published_at": datetime.utcnow().isoformat(),
+                            "published_at": published,
                             "credibility": 0.95,
                             "authors": authors,
                         })
@@ -312,12 +360,13 @@ async def research_papers(topic: str, limit: int = 5) -> List[Dict[str, Any]]:
     return papers
 
 
-async def search_hackathons(topic: str = "", limit: int = 5) -> List[Dict[str, Any]]:
+async def search_hackathons(topic: str = "",language="English", limit: int = 5) -> List[Dict[str, Any]]:
     """Search upcoming hackathons related to a topic."""
     query = topic or "technology"
     results = await _fetch_from_sources(
         category="hackathons",
         query=query,
+        language=language,
         section="Hackathons",
         limit=limit,
     )
@@ -329,18 +378,19 @@ async def search_hackathons(topic: str = "", limit: int = 5) -> List[Dict[str, A
                 "source": fb["source"],
                 "summary": fb.get("summary", "Browse upcoming hackathons"),
                 "section": "Hackathons",
-                "published_at": datetime.utcnow().isoformat(),
+                "published_at": "",
                 "credibility": 0.7,
             })
     return results[:limit]
 
 
-async def search_competitions(topic: str = "", limit: int = 5) -> List[Dict[str, Any]]:
+async def search_competitions(topic: str = "",language="English", limit: int = 5) -> List[Dict[str, Any]]:
     """Search coding competitions related to a topic."""
     query = topic or "programming"
     results = await _fetch_from_sources(
         category="competitions",
         query=query,
+        language=language,
         section="Coding Competitions",
         limit=limit,
     )
@@ -352,19 +402,20 @@ async def search_competitions(topic: str = "", limit: int = 5) -> List[Dict[str,
                 "source": fb["source"],
                 "summary": fb.get("summary", "Browse coding competitions"),
                 "section": "Coding Competitions",
-                "published_at": datetime.utcnow().isoformat(),
+                "published_at": "",
                 "credibility": 0.7,
             })
     return results[:limit]
 
 
-async def search_conferences(topic: str = "", limit: int = 5) -> List[Dict[str, Any]]:
+async def search_conferences(topic: str = "",language="English", limit: int = 5) -> List[Dict[str, Any]]:
     """Search conferences, workshops, and webinars related to a topic."""
     query = topic or "technology"
     results = await _fetch_from_sources(
         category="conferences",
         query=query,
         section="Conferences & Events",
+        language=language,
         limit=limit,
     )
     if not results:
@@ -375,17 +426,18 @@ async def search_conferences(topic: str = "", limit: int = 5) -> List[Dict[str, 
                 "source": fb["source"],
                 "summary": fb.get("summary", "Browse upcoming conferences"),
                 "section": "Conferences & Events",
-                "published_at": datetime.utcnow().isoformat(),
+                "published_at": "",
                 "credibility": 0.7,
             })
     return results[:limit]
 
 
-async def learning_resources(topic: str, limit: int = 5) -> List[Dict[str, Any]]:
+async def learning_resources(topic: str,language="English", limit: int = 5) -> List[Dict[str, Any]]:
     """Get learning resources and tutorials for any topic."""
     results = await _fetch_from_sources(
         category="learning",
         query=topic,
+        language=language,
         section="Learning Resources",
         limit=limit,
     )

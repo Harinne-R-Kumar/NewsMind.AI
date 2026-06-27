@@ -52,13 +52,21 @@ QUOTES = [
 
 def _to_article(item: dict, default_section: str = "General") -> Article:
     """Convert MCP tool result dict to Article TypedDict."""
+    published = (
+        item.get("published_at")
+        or item.get("published")
+        or item.get("pubDate")
+        or item.get("updated")
+        or item.get("created")
+    )
+
     return Article(
         title=item.get("title", "Untitled"),
         url=item.get("url", "") if is_valid_url(item.get("url")) else "",
         source=item.get("source", "Unknown"),
         summary=item.get("summary", ""),
         section=item.get("section", default_section),
-        published_at=item.get("published_at", datetime.utcnow().isoformat()),
+        published_at=published or "",
     )
 
 
@@ -69,16 +77,26 @@ class ResearchAgent:
         self,
         interest: str,
         preferred_sources: List[str],
+        preferred_language: str,
     ) -> List[Article]:
         """Gather all information types for a single user interest."""
         tasks = [
-            search_news(interest, sources=preferred_sources or None, limit=8),
+            search_news(
+                interest,
+                sources=preferred_sources or None,
+                language=preferred_language,
+                limit=8,
+            ),
             github_trending(topic=interest, limit=3),
             research_papers(interest, limit=3),
-            search_conferences(interest, limit=3),
-            search_hackathons(interest, limit=3),
-            search_competitions(interest, limit=3),
-            learning_resources(interest, limit=3),
+            search_conferences(interest, language=preferred_language,limit=3),
+            search_hackathons(interest, language=preferred_language,limit=3),
+            search_competitions(interest,language=preferred_language, limit=3),
+            learning_resources(
+                interest,
+                language=preferred_language,
+                limit=3,
+            )
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -182,6 +200,7 @@ class ResearchAgent:
         logger.info(f"Research agent collecting for user {state['user_id']}")
 
         preferences = state.get("user_preferences", {})
+        preferred_language = preferences.get("language", "English")
         interests = preferences.get("interests") or ["technology"]
         preferred_sources = preferences.get("preferred_sources", [])
         excluded = [t.lower() for t in preferences.get("excluded_topics", [])]
@@ -191,7 +210,7 @@ class ResearchAgent:
 
         # Collect per interest concurrently
         interest_tasks = [
-            self._collect_for_interest(interest, preferred_sources)
+            self._collect_for_interest(interest, preferred_sources,preferred_language)
             for interest in interests[:5]
         ]
         interest_results = await asyncio.gather(*interest_tasks, return_exceptions=True)
