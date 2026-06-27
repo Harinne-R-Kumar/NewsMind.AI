@@ -13,43 +13,49 @@ Scheduler → Supervisor Agent → Research Agent → MCP Tools → Editorial Ag
 - **LangGraph** orchestrates the multi-agent workflow with conditional routing
 - **ChromaDB** stores long-term memory (interests, reading history, feedback)
 
-flowchart TD
+```mermaid
+flowchart LR
 
-    User[User]
-    API[FastAPI API]
-    Scheduler[APScheduler]
+User --> API
 
-    User -->|Generate Newspaper| API
-    Scheduler -->|Scheduled Job| API
+Scheduler --> API
 
-    API --> Workflow[LangGraph Workflow]
+API --> LangGraph
 
-    Workflow --> Supervisor[Supervisor Agent]
+subgraph LangGraph
+    Supervisor
+    Research
+    Editorial
+    Memory
+    Delivery
 
-    Supervisor --> Research[Research Agent]
+    Supervisor --> Research
+    Research --> Editorial
+    Editorial --> Memory
+    Memory --> Delivery
+end
 
-    Research --> MCP[MCP Tools]
+Research --> MCP
 
-    MCP --> Registry[sources.yaml]
-    Registry --> RSS[RSS Feeds]
-    Registry --> APIs[GitHub • arXiv • OpenWeather]
+subgraph External Sources
+    RSS
+    GitHub
+    arXiv
+    OpenWeather
+end
 
-    MCP --> Research
+MCP --> RSS
+MCP --> GitHub
+MCP --> arXiv
+MCP --> OpenWeather
 
-    Research --> Editorial[Editorial Agent]
+Editorial --> Ollama
 
-    Editorial --> LLM[Ollama LLM]
-    LLM --> Editorial
+Memory --> ChromaDB
 
-    Editorial --> Memory[Memory Agent]
-    Memory --> ChromaDB[(ChromaDB)]
-
-    Memory --> Delivery[Delivery Agent]
-
-    Delivery --> PDF[Generate PDF]
-    Delivery --> Email[SMTP Email]
-
-    Delivery --> User
+Delivery --> Email
+Delivery --> PDF
+```
 
 ## Tech Stack
 
