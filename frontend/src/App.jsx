@@ -13,6 +13,7 @@ import ReportDetail from './components/pages/ReportDetail';
 import Profile from './components/pages/Profile';
 import { Loader } from 'lucide-react';
 import VerifyEmail from './components/pages/Verifyemail';
+import ReportFeedback from "./components/pages/ReportFeedback";
 
 function PrivateRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -59,6 +60,10 @@ function AppRoutes() {
             <Preferences />
           </PrivateRoute>
         }
+      />
+      <Route
+          path="/report-feedback/:reportId"
+          element={<ReportFeedback />}
       />
       <Route
         path="/schedule"

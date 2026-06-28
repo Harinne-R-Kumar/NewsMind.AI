@@ -12,6 +12,7 @@ from backend.schemas.schemas import ArticleFeedbackCreate, ReportFeedbackCreate
 from backend.api.deps import get_current_user
 from backend.utils.logging import setup_logger
 
+from fastapi.responses import HTMLResponse, RedirectResponse
 logger = setup_logger("feedback")
 router = APIRouter(prefix="/api/feedback", tags=["Feedback"])
 
@@ -64,12 +65,76 @@ async def submit_report_feedback(
     report = result.scalars().first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    
+    # Use the rating submitted in this request if present,
+    # otherwise use the rating that was already stored by
+    # the quick feedback endpoint.
+    rating = (
+        data.overall_rating
+        if data.overall_rating is not None
+        else report.overall_rating
+    )
+
+    if (
+        rating is not None
+        and rating <= 3
+        and (
+            data.improvement_request is None
+            or data.improvement_request.strip() == ""
+        )
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Please tell us what should be improved."
+        )
     if data.overall_rating is not None:
         report.overall_rating = data.overall_rating
+    # Save fields first
     if data.overall_feedback is not None:
         report.overall_feedback = data.overall_feedback
-    
+
+    if data.improvement_request is not None:
+        report.improvement_request = data.improvement_request
+    await db.commit()
+
+    # Analyze feedback
+    if (
+        data.overall_feedback is not None
+        or data.improvement_request is not None
+    ):
+        try:
+            from backend.agents.learning import LearningAgent
+            from backend.agents.memory import MemoryAgent
+
+            learning = LearningAgent()
+
+            feedback_text = ""
+
+            if report.overall_feedback:
+                feedback_text += report.overall_feedback
+
+            if report.improvement_request:
+                feedback_text += (
+                    "\nImprovement Request:\n"
+                    + report.improvement_request
+                )
+
+            learning_result = await learning.analyze_feedback(
+                rating=rating,
+                comment=feedback_text
+            )
+
+            memory = MemoryAgent()
+
+            await memory.store_learning_signal(
+                current_user.id,
+                learning_result
+            )
+
+            logger.info(f"Learning Result: {learning_result}")
+
+        except Exception as e:
+            logger.error(e)
+    await db.commit()
     logger.info(f"Report feedback for report {report_id} from user {current_user.id}")
     return {"message": "Report feedback recorded"}
 
@@ -96,3 +161,47 @@ async def get_article_feedback(
         }
         for f in feedbacks
     ]
+
+@router.get("/report/{report_id}/{rating}")
+async def quick_feedback(
+    report_id: int,
+    rating: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    One-click feedback from email.
+    """
+
+    result = await db.execute(
+        select(GeneratedReport).where(
+            GeneratedReport.id == report_id
+        )
+    )
+
+    report = result.scalars().first()
+
+    if not report:
+        return HTMLResponse(
+            "<h2>Report not found.</h2>",
+            status_code=404
+        )
+
+    report.overall_rating = rating
+
+    await db.commit()
+
+    if rating <= 3:
+
+        return RedirectResponse(
+            url=f"http://localhost:5173/report-feedback/{report_id}",
+            status_code=302
+        )
+
+    return HTMLResponse("""
+    <html>
+    <body style="font-family:Arial;text-align:center;padding-top:100px;">
+    <h1>🎉 Thank you!</h1>
+    <p>Your feedback has been recorded.</p>
+    </body>
+    </html>
+    """)

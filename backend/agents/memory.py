@@ -34,6 +34,7 @@ class MemoryAgent:
         self.interests_collection = self.client.get_or_create_collection("user_interests")
         self.reading_collection = self.client.get_or_create_collection("reading_history")
         self.feedback_collection = self.client.get_or_create_collection("feedback")
+        self.learning_collection = self.client.get_or_create_collection("learning_signals")
     
     async def store_interests(self, user_id: int, interests: List[str]):
         """Store user interests as embeddings."""
@@ -141,6 +142,177 @@ class MemoryAgent:
             **state,
             "current_step": "delivery"
         }
+    async def retrieve_learning_signals(
+        self,
+        user_id: int
+    ):
+        """
+        Retrieve learned preferences.
+        """
+
+        results = self.learning_collection.get(
+            where={"user_id": user_id},
+            include=["metadatas"]
+        )
+
+        preferences = {
+
+            "liked_topics": [],
+
+            "disliked_topics": [],
+
+            "preferred_sources": [],
+
+            "avoid_sources": []
+
+        }
+
+        for meta in results["metadatas"]:
+
+            if meta["type"] == "liked_topic":
+
+                preferences["liked_topics"].append(
+
+                    meta["topic"]
+
+                )
+
+            elif meta["type"] == "disliked_topic":
+
+                preferences["disliked_topics"].append(
+
+                    meta["topic"]
+
+                )
+
+            elif meta["type"] == "preferred_source":
+
+                preferences["preferred_sources"].append(
+
+                    meta["source"]
+
+                )
+
+            elif meta["type"] == "avoid_source":
+
+                preferences["avoid_sources"].append(
+
+                    meta["source"]
+
+                )
+
+        return preferences
+
+    async def store_learning_signal(
+        self,
+        user_id: int,
+        learning: dict
+    ):
+        """
+        Store structured learning in Chroma.
+        """
+
+        documents = []
+
+        metadata = []
+
+        ids = []
+
+        import uuid
+
+        for topic in learning.get("liked_topics", []):
+
+            documents.append(
+                f"User likes {topic}"
+            )
+
+            metadata.append({
+
+            "user_id":user_id,
+
+            "type":"liked_topic",
+
+            "topic":topic,
+
+            "timestamp":datetime.utcnow().isoformat()
+
+            })
+
+            ids.append(str(uuid.uuid4()))
+
+        for topic in learning.get("disliked_topics", []):
+
+            documents.append(
+                f"User dislikes {topic}"
+            )
+
+            metadata.append({
+
+                "user_id":user_id,
+
+                "type":"disliked_topic",
+
+                "topic":topic,
+
+                "timestamp":datetime.utcnow().isoformat()
+
+                })
+
+            ids.append(str(uuid.uuid4()))
+
+        for source in learning.get("preferred_sources", []):
+
+            documents.append(
+                f"User prefers source {source}"
+            )
+
+            metadata.append({
+
+                "user_id": user_id,
+
+                "type": "preferred_source",
+
+                "source": source,
+
+                "timestamp": datetime.utcnow().isoformat()
+
+            })
+
+            ids.append(str(uuid.uuid4()))
+
+        for source in learning.get("avoid_sources", []):
+
+            documents.append(
+                f"User dislikes source {source}"
+            )
+
+            metadata.append({
+
+                "user_id": user_id,
+
+                "type":"avoid_source",
+
+                "source": source,
+
+                "timestamp": datetime.utcnow().isoformat()
+
+            })
+
+            ids.append(str(uuid.uuid4()))
+        embeddings = []
+
+        for doc in documents:
+            embedding = await self.embeddings.aembed_query(doc)
+            embeddings.append(embedding)
+        if not documents:
+            return
+
+        self.learning_collection.add(
+            ids=ids,
+            documents=documents,
+            embeddings=embeddings,
+            metadatas=metadata
+        )
 
 
 # LangGraph node function

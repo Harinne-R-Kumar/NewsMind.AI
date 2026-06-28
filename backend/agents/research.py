@@ -22,6 +22,10 @@ from backend.mcp.tools import (
 )
 from backend.utils.logging import setup_logger
 from backend.utils.sanitize import is_valid_url
+from backend.agents.memory import MemoryAgent
+from sqlalchemy.future import select
+from backend.database.connection import async_session
+from backend.models.models import GeneratedReport
 
 logger = setup_logger("research")
 
@@ -75,29 +79,79 @@ class ResearchAgent:
 
     async def _collect_for_interest(
         self,
-        interest: str,
-        preferred_sources: List[str],
-        preferred_language: str,
-    ) -> List[Article]:
+        interest,
+        preferred_sources,
+        preferred_language,
+        learning
+    )-> List[Article]:
         """Gather all information types for a single user interest."""
-        tasks = [
+        avoid_sources = {
+            s.lower()
+            for s in learning.get("avoid_sources", [])
+        }
+        tasks = []
+
+        tasks.append(
+
             search_news(
                 interest,
                 sources=preferred_sources or None,
                 language=preferred_language,
                 limit=8,
-            ),
-            github_trending(topic=interest, limit=3),
-            research_papers(interest, limit=3),
-            search_conferences(interest, language=preferred_language,limit=3),
-            search_hackathons(interest, language=preferred_language,limit=3),
-            search_competitions(interest,language=preferred_language, limit=3),
+            )
+
+        )
+        if "github" not in avoid_sources:
+
+            tasks.append(
+
+                github_trending(
+                    topic=interest,
+                    limit=3
+                )
+
+            )
+        if "arxiv" not in avoid_sources:
+
+            tasks.append(
+
+                research_papers(
+                    interest,
+                    limit=3
+                )
+
+            )
+        tasks.append(
+            search_conferences(
+                interest,
+                language=preferred_language,
+                limit=3
+            )
+        )
+
+        tasks.append(
+            search_hackathons(
+                interest,
+                language=preferred_language,
+                limit=3
+            )
+        )
+
+        tasks.append(
+            search_competitions(
+                interest,
+                language=preferred_language,
+                limit=3
+            )
+        )
+
+        tasks.append(
             learning_resources(
                 interest,
                 language=preferred_language,
-                limit=3,
+                limit=3
             )
-        ]
+        )
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         articles = []
@@ -198,11 +252,102 @@ class ResearchAgent:
     async def collect(self, state: NewspaperState) -> NewspaperState:
         """Main collection — delegates all retrieval to MCP tools."""
         logger.info(f"Research agent collecting for user {state['user_id']}")
+        memory = MemoryAgent()
+
+        learning = await memory.retrieve_learning_signals(
+            state["user_id"]
+        )
+
+        logger.info(f"Learning Signals: {learning}")
+        # -----------------------------
+        # Load previous low-rated feedback
+        # -----------------------------
+
+        async with async_session() as db:
+
+            result = await db.execute(
+
+                select(GeneratedReport)
+                .where(
+                    GeneratedReport.user_id == state["user_id"],
+                    GeneratedReport.overall_rating <= 3,
+                    GeneratedReport.improvement_request.isnot(None)
+                )
+                .order_by(
+                    GeneratedReport.generated_at.desc()
+                )
+                .limit(5)
+
+            )
+
+            reports = result.scalars().all()
+
+        state["improvement_requests"] = [
+
+            r.improvement_request
+
+            for r in reports
+
+            if r.improvement_request
+
+        ]
 
         preferences = state.get("user_preferences", {})
         preferred_language = preferences.get("language", "English")
         interests = preferences.get("interests") or ["technology"]
-        preferred_sources = preferences.get("preferred_sources", [])
+
+        liked_topics = learning.get("liked_topics", [])
+
+        disliked_topics = learning.get("disliked_topics", [])
+
+        # Add learned interests
+        for topic in liked_topics:
+
+            if topic.lower() not in [i.lower() for i in interests]:
+
+                interests.append(topic)
+
+        # Remove disliked interests
+        disliked = {
+
+            t.lower()
+
+            for t in disliked_topics
+
+        }
+
+        interests = [
+
+            topic
+
+            for topic in interests
+
+            if topic.lower() not in disliked
+
+        ]
+        preferred_sources = preferences.get(
+            "preferred_sources",
+            []
+        )
+
+        avoid = {
+            s.lower()
+            for s in learning.get("avoid_sources", [])
+        }
+
+        preferred_sources = [
+
+            s
+
+            for s in preferred_sources
+
+            if s.lower() not in avoid
+
+        ]
+
+        preferred_sources = list(
+            set(preferred_sources)
+        )
         excluded = [t.lower() for t in preferences.get("excluded_topics", [])]
         city = preferences.get("city", "London")
 
@@ -210,7 +355,7 @@ class ResearchAgent:
 
         # Collect per interest concurrently
         interest_tasks = [
-            self._collect_for_interest(interest, preferred_sources,preferred_language)
+            self._collect_for_interest(interest,preferred_sources,preferred_language,learning)
             for interest in interests[:5]
         ]
         interest_results = await asyncio.gather(*interest_tasks, return_exceptions=True)

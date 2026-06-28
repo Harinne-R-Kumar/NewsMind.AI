@@ -1,0 +1,5 @@
+In one terminal for backend .\venv\Scripts\uvicorn.exe backend.main:app --reload --port 8000
+
+In one terminal for frontend 
+ cd frontend
+ npm run dev 

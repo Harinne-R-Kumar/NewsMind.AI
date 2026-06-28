@@ -121,8 +121,9 @@ class ArticleFeedbackCreate(BaseModel):
 
 
 class ReportFeedbackCreate(BaseModel):
-    overall_rating: Optional[int] = Field(None, ge=1, le=5)
+    overall_rating: Optional[int] = None
     overall_feedback: Optional[str] = None
+    improvement_request: Optional[str] = None
 
 
 # === REPORTS ===

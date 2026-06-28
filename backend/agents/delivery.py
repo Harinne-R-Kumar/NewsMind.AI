@@ -19,6 +19,9 @@ from reportlab.lib.colors import HexColor
 from backend.config import settings
 from backend.graph.state import NewspaperState, Article
 from backend.utils.logging import setup_logger
+from backend.database.connection import async_session
+from backend.models.models import GeneratedReport
+from datetime import datetime
 
 logger = setup_logger("delivery")
 
@@ -277,11 +280,52 @@ class DeliveryAgent:
         
         # Generate PDF
         pdf_path = self.generate_pdf(state, articles)
-        
-        # Generate email content
-        html_content = self.generate_email_html(state)
-        
-        # Send email
+
+        html_content = ""
+
+        # -----------------------------------
+        # SAVE REPORT BEFORE SENDING EMAIL
+        # -----------------------------------
+
+        async with async_session() as db:
+
+            report = GeneratedReport(
+                user_id=state["user_id"],
+                html_content="",
+                pdf_path=pdf_path,
+                generated_at=datetime.utcnow()
+            )
+
+            db.add(report)
+
+            await db.commit()
+
+            await db.refresh(report)
+
+        # Store report_id in workflow state
+        state["report_id"] = report.id
+
+        # -----------------------------------
+        # Regenerate HTML so feedback links
+        # contain the report_id
+        # -----------------------------------
+
+        from backend.agents.editorial import EditorialAgent
+
+        editor = EditorialAgent()
+
+        html_content = await editor.generate_html(
+            state,
+            articles
+        )
+        async with async_session() as db:
+
+            report = await db.get(GeneratedReport, state["report_id"])
+
+            report.html_content = html_content
+
+            await db.commit()
+
         email_sent = False
         if user_email and settings.SMTP_USER != "dummy@gmail.com":
             date_str = state.get("started_at", "")[:10]
@@ -290,10 +334,12 @@ class DeliveryAgent:
         else:
             logger.info("Email delivery skipped - SMTP not configured")
         
-        logger.info(f"Delivery complete: PDF={pdf_path}, Email={email_sent}")
         
+        logger.info(f"Delivery complete: PDF={pdf_path}, Email={email_sent}")
+
         return {
             **state,
+            "report_id": state["report_id"],     # <-- Add this line
             "pdf_path": pdf_path,
             "email_sent": email_sent,
             "current_step": "complete",

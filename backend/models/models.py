@@ -148,6 +148,7 @@ class GeneratedReport(Base):
     html_content = Column(Text, nullable=False)
     overall_rating = Column(Integer, nullable=True)  # 1-5 stars
     overall_feedback = Column(Text, nullable=True)
+    improvement_request = Column(Text, nullable=True)
 
     user = relationship("User", back_populates="reports")
 

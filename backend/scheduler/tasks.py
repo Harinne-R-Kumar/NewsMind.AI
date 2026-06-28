@@ -118,15 +118,7 @@ async def process_user_delivery(user_data: dict):
         )
 
         # Save generated report
-        async with async_session() as db:
-            report = GeneratedReport(
-                user_id=user.id,
-                html_content=result.get("html_content", ""),
-                pdf_path=result.get("pdf_path"),
-                generated_at=datetime.utcnow()
-            )
-            db.add(report)
-            await db.commit()
+        
         
         logger.info(f"Delivery complete for user {user.id}")
         return {"success": True, "user_id": user.id}
@@ -206,21 +198,12 @@ async def manual_generation_task(user_id: int):
         is_verified=user.is_verified,
         manual_trigger=True,
     )
-
-    # Save report
-    async with async_session() as db:
-        report = GeneratedReport(
-            user_id=user.id,
-            html_content=result.get("html_content", ""),
-            pdf_path=result.get("pdf_path"),
-            generated_at=datetime.utcnow()
-        )
-        db.add(report)
-        await db.commit()
-        await db.refresh(report)
-        report_id = report.id
     
-    return {"success": True, "report_id": report_id, "pdf_path": result.get("pdf_path")}
+    return {
+    "success": True,
+    "report_id": result.get("report_id"),
+    "pdf_path": result.get("pdf_path")
+}
 
 
 def start_scheduler():
